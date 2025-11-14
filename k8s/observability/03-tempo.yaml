@@ -3,21 +3,27 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: tempo-config
-  
+  namespace: opentelemetry
 data:
   tempo.yaml: |
     server:
       http_listen_port: 3200
+      log_level: info
 
     distributor:
       receivers:
         otlp:
           protocols:
             http:
+              endpoint: 0.0.0.0:4318
             grpc:
+              endpoint: 0.0.0.0:4317
 
     ingester:
       max_block_duration: 5m
+      # Augmenter pour mieux gérer les traces Java complexes
+      trace_idle_period: 20s
+      max_block_bytes: 1_000_000
 
     compactor:
       compaction:
@@ -27,11 +33,31 @@ data:
       registry:
         external_labels:
           source: tempo
+          cluster: minikube
       storage:
         path: /var/tempo/generator/wal
         remote_write:
           - url: http://prometheus:9090/api/v1/write
             send_exemplars: true
+      # Générer des métriques à partir des spans Java
+      processor:
+        service_graphs:
+          # Créer un graphe des relations entre services
+          dimensions:
+            - http.method
+            - http.status_code
+            - service.namespace
+        span_metrics:
+          # Générer des métriques de latence et de comptage
+          dimensions:
+            - http.method
+            - http.status_code
+            - service.name
+            - service.namespace
+            - db.system
+            - db.name
+          # Capturer les erreurs
+          enable_target_info: true
 
     storage:
       trace:
@@ -40,9 +66,46 @@ data:
           path: /var/tempo/wal
         local:
           path: /var/tempo/blocks
+        pool:
+          max_workers: 100
+          queue_depth: 10000
+
+    # Configuration pour les requêtes et recherches
+    query_frontend:
+      search:
+        # Activer la recherche avancée
+        max_duration: 0s
+        default_result_limit: 20
+      trace_by_id:
+        query_timeout: 30s
+
+    querier:
+      # Optimiser les requêtes pour les traces Java
+      max_concurrent_queries: 10
+      search:
+        external_endpoints: []
+        prefer_self: 10
 
     overrides:
-      metrics_generator_processors: ['service-graphs', 'span-metrics']
+      defaults:
+        # Processeurs de métriques
+        metrics_generator:
+          processors: [service-graphs, span-metrics, local-blocks]
+          # Collecter tous les spans
+          collection_interval: 15s
+          # Durée max des traces (pour traces Java longues)
+          max_trace_duration: 5m
+
+        # Limites pour éviter la surcharge
+        ingestion:
+          # Taille max des traces (augmentée pour Java)
+          max_bytes_per_trace: 5_000_000
+          # Nombre max de spans par trace
+          max_spans_per_trace: 100_000
+
+        # Recherche
+        read:
+          max_search_duration: 5m
 
 ---
 apiVersion: v1

@@ -14,45 +14,76 @@ data:
         url: http://prometheus:9090
         isDefault: true
         editable: true
+        uid: prometheus
 
       - name: Loki
         type: loki
         access: proxy
         url: http://loki:3100
         editable: true
+        uid: loki
         jsonData:
           maxLines: 1000
+          derivedFields:
+            - datasourceUid: tempo
+              matcherRegex: "trace_id=(\\w+)"
+              name: TraceID
+              url: "$${__value.raw}"
 
       - name: Tempo
         type: tempo
         access: proxy
         url: http://tempo:3200
         editable: true
+        uid: tempo
         jsonData:
           httpMethod: GET
+          # Support des tags personnalisés pour Java
           tracesToLogs:
-            datasourceUid: Loki
-            tags: ['job', 'instance', 'pod', 'namespace']
-            mappedTags: [{ key: 'service.name', value: 'service' }]
-            mapTagNamesEnabled: false
-            spanStartTimeShift: '1h'
+            datasourceUid: loki
+            tags: ['service.name', 'k8s.namespace.name', 'k8s.pod.name', 'k8s.deployment.name']
+            mappedTags:
+              - key: 'service.name'
+                value: 'service'
+              - key: 'k8s.namespace.name'
+                value: 'namespace'
+            mapTagNamesEnabled: true
+            spanStartTimeShift: '-1h'
             spanEndTimeShift: '1h'
-            filterByTraceID: false
-            filterBySpanID: false
+            filterByTraceID: true
+            filterBySpanID: true
+          # Métriques générées depuis les spans
           tracesToMetrics:
-            datasourceUid: Prometheus
-            tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+            datasourceUid: prometheus
+            tags:
+              - key: 'service.name'
+                value: 'service'
+              - key: 'http.method'
+              - key: 'http.status_code'
+              - key: 'db.system'
             queries:
-              - name: 'Sample query'
-                query: 'sum(rate(tempo_spanmetrics_latency_bucket{$__tags}[5m]))'
+              - name: 'Request Rate'
+                query: 'rate(tempo_spanmetrics_calls_total{$__tags}[5m])'
+              - name: 'Request Duration p95'
+                query: 'histogram_quantile(0.95, rate(tempo_spanmetrics_latency_bucket{$__tags}[5m]))'
+              - name: 'Error Rate'
+                query: 'rate(tempo_spanmetrics_calls_total{$__tags, status_code="STATUS_CODE_ERROR"}[5m])'
+          # Service graph depuis Prometheus
           serviceMap:
-            datasourceUid: Prometheus
+            datasourceUid: prometheus
+          # Recherche activée avec tous les tags
           search:
             hide: false
+          # Node graph pour visualiser les relations
           nodeGraph:
             enabled: true
+          # Recherche dans les logs
           lokiSearch:
-            datasourceUid: Loki
+            datasourceUid: loki
+          # Tags à afficher dans l'UI
+          spanBar:
+            type: 'Tag'
+            tag: 'http.status_code'
 
 ---
 apiVersion: v1
