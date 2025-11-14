@@ -35,24 +35,24 @@ minikube start --cpus=4 --memory=4096
 ### 1. Déployer tous les composants
 
 ```bash
-kubectl apply -f k8s/observability/
+kubectl apply -f k8s/opentelemetry/
 ```
 
 ### 2. Vérifier le déploiement
 
 ```bash
 # Vérifier que tous les pods sont en cours d'exécution
-kubectl get pods -n observability
+kubectl get pods -n opentelemetry
 
 # Vérifier les services
-kubectl get svc -n observability
+kubectl get svc -n opentelemetry
 ```
 
 ### 3. Accéder à Grafana
 
 ```bash
 # Port-forward pour accéder à Grafana
-kubectl port-forward -n observability svc/grafana 3000:3000
+kubectl port-forward -n opentelemetry svc/grafana 3000:3000
 ```
 
 Ouvrir http://localhost:3000 dans votre navigateur.
@@ -63,38 +63,38 @@ L'authentification anonyme est activée avec le rôle Admin.
 
 ### Grafana
 ```bash
-kubectl port-forward -n observability svc/grafana 3000:3000
+kubectl port-forward -n opentelemetry svc/grafana 3000:3000
 # http://localhost:3000
 ```
 
 ### Prometheus
 ```bash
-kubectl port-forward -n observability svc/prometheus 9090:9090
+kubectl port-forward -n opentelemetry svc/prometheus 9090:9090
 # http://localhost:9090
 ```
 
 ### Tempo (OTLP endpoint pour vos applications)
 ```bash
 # OTLP gRPC
-kubectl port-forward -n observability svc/tempo 4317:4317
+kubectl port-forward -n opentelemetry svc/tempo 4317:4317
 
 # OTLP HTTP
-kubectl port-forward -n observability svc/tempo 4318:4318
+kubectl port-forward -n opentelemetry svc/tempo 4318:4318
 ```
 
 ### Loki
 ```bash
-kubectl port-forward -n observability svc/loki 3100:3100
+kubectl port-forward -n opentelemetry svc/loki 3100:3100
 # http://localhost:3100
 ```
 
 ### OpenTelemetry Collector
 ```bash
 # OTLP gRPC
-kubectl port-forward -n observability svc/otel-collector 4317:4317
+kubectl port-forward -n opentelemetry svc/otel-collector 4317:4317
 
 # OTLP HTTP
-kubectl port-forward -n observability svc/otel-collector 4318:4318
+kubectl port-forward -n opentelemetry svc/otel-collector 4318:4318
 ```
 
 ## Configuration des Datasources Grafana
@@ -132,15 +132,15 @@ Pour vos applications instrumentées avec OpenTelemetry, pointez vers le collect
 
 ```bash
 # Via le Collector (RECOMMANDÉ - ajoute les attributs Kubernetes automatiquement)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4318
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.opentelemetry.svc.cluster.local:4318
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 # Ou pour gRPC
-OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4317
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.opentelemetry.svc.cluster.local:4317
 OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 
 # Direct vers Tempo (sans enrichissement Kubernetes)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo.observability.svc.cluster.local:4318
+OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo.opentelemetry.svc.cluster.local:4318
 ```
 
 ### Configuration Spring Boot avec OpenTelemetry
@@ -185,7 +185,7 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "my-spring-app"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.observability.svc.cluster.local:4318"
+              value: "http://otel-collector.opentelemetry.svc.cluster.local:4318"
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: "http/protobuf"
             - name: OTEL_METRICS_EXPORTER
@@ -249,7 +249,7 @@ spring:
 otel:
   exporter:
     otlp:
-      endpoint: http://otel-collector.observability.svc.cluster.local:4318
+      endpoint: http://otel-collector.opentelemetry.svc.cluster.local:4318
   resource:
     attributes:
       service.name: ${spring.application.name}
@@ -277,26 +277,118 @@ Et ajoutez les annotations Prometheus à votre pod (voir ci-dessous).
 
 ### Annotations Prometheus pour vos Pods
 
-Pour que Prometheus scrape les métriques de vos applications :
+Pour que Prometheus scrape les métriques de vos applications, ajoutez ces annotations :
+
+#### Sur le Service (recommandé pour Spring Boot)
 
 ```yaml
 apiVersion: v1
-kind: Pod
+kind: Service
 metadata:
+  name: backend-service
+  namespace: weeding-app
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "8080"
-    prometheus.io/path: "/metrics"
+    prometheus.io/path: "/actuator/prometheus"  # Pour Spring Boot Actuator
+```
+
+#### Sur le Pod/Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-service
+  namespace: weeding-app
+spec:
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+```
+
+### Configuration Spring Boot pour les Métriques
+
+Pour exposer les métriques Prometheus dans Spring Boot, ajoutez dans `application.yml` :
+
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,metrics,info
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+```
+
+Et dans votre `pom.xml` :
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-registry-prometheus</artifactId>
+</dependency>
+```
+
+## Jobs Prometheus Configurés
+
+La configuration Prometheus inclut 3 jobs de scraping :
+
+### 1. **kubernetes-pods** (Discovery automatique)
+Scrape tous les pods avec les annotations `prometheus.io/scrape: "true"` dans tous les namespaces.
+
+### 2. **backend-service** (Ciblé)
+Job spécifique pour scraper `backend-service` dans le namespace `weeding-app`.
+- Cible : `backend-service.weeding-app.svc.cluster.local`
+- Labels ajoutés : `kubernetes_namespace`, `kubernetes_service`, `kubernetes_pod_name`
+
+### 3. **kubernetes-services** (Services annotés)
+Scrape tous les services Kubernetes avec les annotations `prometheus.io/scrape: "true"`.
+
+### Vérifier que Prometheus scrape votre service
+
+```bash
+# Port-forward vers Prometheus
+kubectl port-forward -n opentelemetry svc/prometheus 9090:9090
+
+# Ouvrir http://localhost:9090
+# Aller dans Status > Targets
+# Chercher le job "backend-service" ou "kubernetes-pods"
+```
+
+### Exemple de requêtes PromQL pour backend-service
+
+```promql
+# CPU usage
+rate(process_cpu_usage{kubernetes_service="backend-service"}[5m])
+
+# Memory usage
+jvm_memory_used_bytes{kubernetes_service="backend-service"}
+
+# HTTP requests
+rate(http_server_requests_seconds_count{kubernetes_service="backend-service"}[5m])
+
+# HTTP latency p95
+histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{kubernetes_service="backend-service"}[5m]))
 ```
 
 ## Nettoyage
 
 ```bash
 # Supprimer tous les composants
-kubectl delete -f k8s/observability/
+kubectl delete -f k8s/opentelemetry/
 
 # Ou supprimer le namespace complet
-kubectl delete namespace observability
+kubectl delete namespace opentelemetry
 ```
 
 ## Limitations (Mode Léger)
@@ -362,7 +454,7 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "spring-boot-demo"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.observability.svc.cluster.local:4318"
+              value: "http://otel-collector.opentelemetry.svc.cluster.local:4318"
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: "http/protobuf"
             - name: OTEL_METRICS_EXPORTER
@@ -406,7 +498,7 @@ Une fois votre application déployée :
 
 1. **Vérifier les logs du collector** :
 ```bash
-kubectl logs -n observability deployment/otel-collector -f
+kubectl logs -n opentelemetry deployment/otel-collector -f
 ```
 
 2. **Vérifier les traces dans Tempo** :
@@ -417,7 +509,7 @@ kubectl logs -n observability deployment/otel-collector -f
 
 3. **Vérifier les métriques dans Prometheus** :
 ```bash
-kubectl port-forward -n observability svc/prometheus 9090:9090
+kubectl port-forward -n opentelemetry svc/prometheus 9090:9090
 ```
    - Ouvrez http://localhost:9090
    - Recherchez vos métriques : `otel_*` ou votre service name
@@ -436,7 +528,7 @@ Vérifiez que le service est accessible depuis votre namespace :
 ```bash
 # Depuis un pod de votre namespace
 kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- \
-  curl -v http://otel-collector.observability.svc.cluster.local:4318/v1/traces
+  curl -v http://otel-collector.opentelemetry.svc.cluster.local:4318/v1/traces
 ```
 
 ### Pas de traces visibles dans Tempo

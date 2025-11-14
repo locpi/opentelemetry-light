@@ -3,7 +3,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: otel-collector-config
-  namespace: observability
+  namespace: opentelemetry
 data:
   otel-collector-config.yaml: |
     receivers:
@@ -136,7 +136,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: otel-collector
-  namespace: observability
+  namespace: opentelemetry
   labels:
     app: otel-collector
 spec:
@@ -170,7 +170,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: otel-collector
-  namespace: observability
+  namespace: opentelemetry
   labels:
     app: otel-collector
 spec:
@@ -244,7 +244,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: otel-collector
-  namespace: observability
+  namespace: opentelemetry
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -289,4 +289,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: otel-collector
-    namespace: observability
+    namespace: opentelemetry
