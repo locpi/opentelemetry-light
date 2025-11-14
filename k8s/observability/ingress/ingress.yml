@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: opentelemetry-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  rules:
+    - host: monitoring.weeding-planner.fun
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000
+
+
+  tls:
+    - hosts:
+        - monitoring.weeding-planner.fun
+      secretName: opentelemetry-cert-tls-secret

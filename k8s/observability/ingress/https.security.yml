@@ -1,0 +1,28 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: opentelemetry-cert-letsencrypt-prod
+spec:
+  acme:
+    email: loic.pincon29@gmail.com
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: opentelemetry-cert
+spec:
+  secretName: opentelemetry-cert-tls-secret
+  duration: 2160h
+  renewBefore: 360h
+  issuerRef:
+    name: opentelemetry-cert-letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - monitoring.weeding-planner.fun
