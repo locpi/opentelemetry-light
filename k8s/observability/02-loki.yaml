@@ -32,7 +32,7 @@ data:
             period: 24h
 
     limits_config:
-      retention_period: 2h
+      retention_period: 360h
       max_entries_limit_per_query: 5000
       max_streams_per_user: 0
       max_global_streams_per_user: 5000
@@ -43,6 +43,10 @@ data:
       retention_enabled: true
       retention_delete_delay: 2h
       retention_delete_worker_count: 150
+
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: 360h
 
 ---
 apiVersion: v1
@@ -100,7 +104,8 @@ spec:
           configMap:
             name: loki-config
         - name: storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: loki-storage
 
 ---
 apiVersion: v1

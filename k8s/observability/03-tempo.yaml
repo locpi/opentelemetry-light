@@ -27,7 +27,7 @@ data:
 
     compactor:
       compaction:
-        block_retention: 1h
+        block_retention: 360h
 
     metrics_generator:
       registry:
@@ -140,4 +140,5 @@ spec:
           configMap:
             name: tempo-config
         - name: storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: tempo-storage
