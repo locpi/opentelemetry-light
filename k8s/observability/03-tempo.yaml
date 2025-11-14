@@ -70,17 +70,9 @@ data:
     querier:
       max_concurrent_queries: 10
 
-    # Limites globales pour les traces Java
+    # Processeurs de métriques pour les traces Java
     overrides:
       metrics_generator_processors: [service-graphs, span-metrics]
-      # Durée max des traces (pour traces Java longues)
-      max_trace_duration: 5m
-      # Taille max des traces (augmentée pour Java)
-      max_bytes_per_trace: 5_000_000
-      # Nombre max de spans par trace
-      max_spans_per_trace: 100_000
-      # Intervalle de collecte des métriques
-      metrics_generator_collection_interval: 15s
 
 ---
 apiVersion: v1
@@ -121,7 +113,7 @@ spec:
     spec:
       containers:
         - name: tempo
-          image: grafana/tempo:2.2.3
+          image: grafana/tempo:2.3.1
           args:
             - -config.file=/etc/tempo/tempo.yaml
           ports:
